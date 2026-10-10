@@ -825,6 +825,9 @@
             </div>
         </div>
 
+        <!-- ACTIVE CPS ALERTS BANNER -->
+        <div id="alertBox" style="display:none;margin-bottom:15px;"></div>
+
         <!-- LEFT COLUMN: CONTROLS & COMMANDS -->
         <div class="left-col" style="display:flex;flex-direction:column;gap:20px">
             <!-- SECTION 1: SELECTION MODE -->
@@ -3059,6 +3062,83 @@
             }
         }
 
+        // ─── ACTIVE CPS ALERTS BANNER MANAGER (Vetos & Battery) ───
+        function updateAlertsBanner(backendAlerts, telData) {
+            const box = document.getElementById("alertBox");
+            if (!box) return;
+
+            let alerts = Array.isArray(backendAlerts) ? [...backendAlerts] : [];
+
+            // Local fallback synthesis from live telData if backend list empty
+            if (alerts.length === 0 && telData && typeof telData === 'object') {
+                const voltMin = (sysCfg && sysCfg.INA_VOLT_MIN != null) ? Number(sysCfg.INA_VOLT_MIN) : null;
+                const safeHum = (sysCfg && sysCfg.SAFE_AIR_HUMIDITY != null) ? Number(sysCfg.SAFE_AIR_HUMIDITY) : null;
+                const safeOutdoorT = (sysCfg && sysCfg.SAFE_OUTDOOR_AIR_TEMP != null) ? Number(sysCfg.SAFE_OUTDOOR_AIR_TEMP) : null;
+                const safeSoilT = (sysCfg && sysCfg.SAFE_INDOOR_SOIL_TEMP != null) ? Number(sysCfg.SAFE_INDOOR_SOIL_TEMP) : null;
+
+                for (const cSid in telData) {
+                    const cInfo = telData[cSid];
+                    const cIna = cInfo.coord_ina || {};
+                    if (voltMin != null && cIna.coord_v != null && cIna.coord_v > 0.5 && cIna.coord_v < voltMin) {
+                        alerts.push({
+                            title: "⚠️ LOW BATTERY",
+                            loc: `C${cSid}`,
+                            body: `Voltage: ${Number(cIna.coord_v).toFixed(2)}V (< ${voltMin.toFixed(2)}V) • Status: Critical`
+                        });
+                    }
+                    const nodes = cInfo.nodes || {};
+                    for (const nSid in nodes) {
+                        const n = nodes[nSid];
+                        const loc = `C${cSid}-N${nSid}`;
+                        if (voltMin != null && n.pwr_v != null && n.pwr_v > 0.5 && n.pwr_v < voltMin) {
+                            alerts.push({
+                                title: "⚠️ LOW BATTERY",
+                                loc: loc,
+                                body: `Voltage: ${Number(n.pwr_v).toFixed(2)}V (< ${voltMin.toFixed(2)}V) • Status: Critical`
+                            });
+                        }
+                        if (safeHum != null && n.gas_rh != null && Number(n.gas_rh) >= safeHum) {
+                            alerts.push({
+                                title: "⚠️ VETO: BOTRYTIS",
+                                loc: loc,
+                                body: `Air Hum: ${Number(n.gas_rh).toFixed(1)}% (>= ${safeHum.toFixed(1)}%) • Dampers: OPEN | Irrigation: BLOCKED`
+                            });
+                        }
+                        if (safeOutdoorT != null && n.ds_temp != null && Number(n.ds_temp) < safeOutdoorT) {
+                            alerts.push({
+                                title: "❄️ VETO: COLD FROST",
+                                loc: loc,
+                                body: `Outdoor: ${Number(n.ds_temp).toFixed(1)}°C (< ${safeOutdoorT.toFixed(1)}°C) • Dampers: CLOSED`
+                            });
+                        }
+                        if (safeSoilT != null && n.soil_t != null && Number(n.soil_t) < safeSoilT) {
+                            alerts.push({
+                                title: "🌱 VETO: COLD SOIL",
+                                loc: loc,
+                                body: `Soil Temp: ${Number(n.soil_t).toFixed(1)}°C (< ${safeSoilT.toFixed(1)}°C) • Irrigation: BLOCKED`
+                            });
+                        }
+                    }
+                }
+            }
+
+            if (alerts.length === 0) {
+                box.style.display = "none";
+                box.innerHTML = "";
+                return;
+            }
+
+            box.style.display = "flex";
+            box.style.flexDirection = "column";
+            box.style.gap = "6px";
+            box.innerHTML = alerts.map(a => `
+                <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:6px 10px;background:rgba(255,0,85,0.15);border:1px solid rgba(255,0,85,0.3);border-radius:8px;">
+                    <span style="font-weight:800;letter-spacing:1px;color:#ff0055">${a.title} &nbsp;[📍 ${a.loc}]</span>
+                    <span style="color:#ffffff;font-weight:500;font-size:0.75rem">${(a.body || "").replace(/\\n/g, ' • ')}</span>
+                </div>
+            `).join("");
+        }
+
         function updateLinkStatusBadge(statusText, colorHex) {
             const badge = document.getElementById('statConnection');
             if (badge) {
@@ -3097,11 +3177,15 @@
                     });
                     clearTimeout(timeoutId);
                     if (resp.ok) {
-                        const contentType = resp.headers.get("Content-Type") || "";
                         let cmdHist = [];
                         const xCmdHeader = resp.headers.get("X-Command-History");
                         if (xCmdHeader) {
                             try { cmdHist = JSON.parse(xCmdHeader); } catch (e) { }
+                        }
+                        let activeAlerts = [];
+                        const xAlertsHeader = resp.headers.get("X-Active-Alerts");
+                        if (xAlertsHeader) {
+                            try { activeAlerts = JSON.parse(xAlertsHeader); } catch (e) { }
                         }
                         let data = null;
                         let isEmpty = false;
@@ -3123,6 +3207,7 @@
                                     const parsed = JSON.parse(text);
                                     data = parsed.telemetry || parsed;
                                     if (parsed.command_history && (!cmdHist || cmdHist.length === 0)) cmdHist = parsed.command_history;
+                                    if (parsed.active_alerts && (!activeAlerts || activeAlerts.length === 0)) activeAlerts = parsed.active_alerts;
                                 } catch (e) {
                                     const enc = new TextEncoder();
                                     data = decodeSuperPackets(enc.encode(text).buffer);
@@ -3140,7 +3225,7 @@
                             } else {
                                 updateLinkStatusBadge(`🟢 ${cand.name} (Rx #${totalRxCount} • BIN)`, "#00e676");
                             }
-                            return { telemetry: data, command_history: cmdHist };
+                            return { telemetry: data, command_history: cmdHist, active_alerts: activeAlerts };
                         } else {
                             diags.push(`${cand.name} CRC ERR`);
                         }
@@ -3183,6 +3268,9 @@
                 else if (payload.config) applySysConfig(payload.config);
                     const telData = payload.telemetry || payload;
                     const cmdHistory = payload.command_history || [];
+
+                    // Update Active CPS Alerts Banner
+                    updateAlertsBanner(payload.active_alerts, telData);
 
                     let topoChanged = false;
                     let stateChanged = false;

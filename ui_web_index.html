@@ -1381,10 +1381,46 @@
             const params = new URLSearchParams(window.location.search);
 
             // Parse live HTTP API URL for 2-second polling with automatic failover
-            const apiRaw = params.get('api');
-            if (apiRaw) telemetryApiUrl = apiRaw;
+            let apiRaw = params.get('api');
+            if (apiRaw) {
+                try {
+                    const u = new URL(apiRaw);
+                    if (u.pathname === '' || u.pathname === '/') {
+                        u.pathname = '/telemetry';
+                    }
+                    if (!u.searchParams.has('token')) {
+                        u.searchParams.set('token', 'NETCORE-CPS-SECURE-WEB-TOKEN-2026');
+                    }
+                    apiRaw = u.toString();
+                } catch (_) {
+                    if (!apiRaw.includes('/telemetry')) {
+                        apiRaw = apiRaw.replace(/\/+$/, '') + '/telemetry';
+                    }
+                    if (!apiRaw.includes('token=')) {
+                        apiRaw += (apiRaw.includes('?') ? '&' : '?') + 'token=NETCORE-CPS-SECURE-WEB-TOKEN-2026';
+                    }
+                }
+                telemetryApiUrl = apiRaw;
+            }
             const fbRaw = params.get('api_fb');
             if (fbRaw) telemetryFallbackApiUrl = fbRaw;
+
+            // Auto-discover tunnel URL from GitHub repository if no api param passed
+            if (!telemetryApiUrl && !telemetryFallbackApiUrl) {
+                fetch("https://raw.githubusercontent.com/Alejandro-cps/NET-CORE-CPS/main/tunnel_url.txt", { cache: "no-store" })
+                    .then(r => r.text())
+                    .then(txt => {
+                        const u = txt.trim();
+                        if (u && u.startsWith("http")) {
+                            telemetryApiUrl = u.replace(/\/+$/, '') + '/telemetry?token=NETCORE-CPS-SECURE-WEB-TOKEN-2026';
+                            activeApiUrl = telemetryApiUrl;
+                            if (typeof updateTunnelDisplay === 'function') {
+                                updateTunnelDisplay(activeApiUrl, "CLOUDFLARE READY", "#00e676");
+                            }
+                        }
+                    }).catch(() => {});
+            }
+
             activeApiUrl = telemetryApiUrl || telemetryFallbackApiUrl;
             if (typeof updateTunnelDisplay === 'function') {
                 updateTunnelDisplay(activeApiUrl, telemetryApiUrl ? "CLOUDFLARE READY" : (telemetryFallbackApiUrl ? "LOCAL LAN READY" : "STANDALONE"));
@@ -3173,7 +3209,10 @@
                     const resp = await fetch(cand.url, { 
                         signal: ctrl.signal, 
                         cache: "no-store",
-                        headers: { "Accept": "application/octet-stream, application/json" }
+                        headers: { 
+                            "Accept": "application/octet-stream, application/json",
+                            "X-API-Token": "NETCORE-CPS-SECURE-WEB-TOKEN-2026"
+                        }
                     });
                     clearTimeout(timeoutId);
                     if (resp.ok) {
@@ -3189,6 +3228,7 @@
                         }
                         let data = null;
                         let isEmpty = false;
+                        const contentType = resp.headers.get("Content-Type") || "";
                         if (contentType.includes("octet-stream")) {
                             const buf = await resp.arrayBuffer();
                             if (buf.byteLength === 0) {

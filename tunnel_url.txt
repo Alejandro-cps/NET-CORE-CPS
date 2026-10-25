@@ -1,1 +1,1 @@
-https://kelkoo-nov-choose-mins.trycloudflare.com
+https://var-route-deny-loc.trycloudflare.com

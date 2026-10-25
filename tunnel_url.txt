@@ -1,1 +1,1 @@
-https://usgs-burst-expected-edge.trycloudflare.com
+https://analytical-dsl-delayed-duo.trycloudflare.com

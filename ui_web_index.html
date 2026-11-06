@@ -3137,14 +3137,7 @@
                             alerts.push({
                                 title: "⚠️ VETO: BOTRYTIS",
                                 loc: loc,
-                                body: `Air Hum: ${Number(n.gas_rh).toFixed(1)}% (>= ${safeHum.toFixed(1)}%) • Dampers: OPEN | Irrigation: BLOCKED`
-                            });
-                        }
-                        if (safeOutdoorT != null && n.ds_temp != null && Number(n.ds_temp) < safeOutdoorT) {
-                            alerts.push({
-                                title: "❄️ VETO: COLD FROST",
-                                loc: loc,
-                                body: `Outdoor: ${Number(n.ds_temp).toFixed(1)}°C (< ${safeOutdoorT.toFixed(1)}°C) • Dampers: CLOSED`
+                                body: `Air Hum: ${Number(n.gas_rh).toFixed(1)}% (>= ${safeHum.toFixed(1)}%) • Irrigation: BLOCKED`
                             });
                         }
                         if (safeSoilT != null && n.soil_t != null && Number(n.soil_t) < safeSoilT) {

@@ -2248,9 +2248,8 @@
                 get max() { return sysCfg.INDOOR_AIR_TEMP_MAX; },
                 get thresholds() {
                     return [
-                        { val: sysCfg.INDOOR_AIR_TEMP_MAX, label: "MAX: " + sysCfg.INDOOR_AIR_TEMP_MAX + "°C", color: "rgba(255,42,95,0.85)" },
-                        { val: sysCfg.INDOOR_AIR_TEMP_LOWER, label: "OPTIMAL: " + sysCfg.INDOOR_AIR_TEMP_LOWER + "°C", color: "rgba(255,183,3,0.85)" },
-                        { val: sysCfg.INDOOR_AIR_TEMP_MIN, label: "MIN (VETO): " + sysCfg.INDOOR_AIR_TEMP_MIN + "°C", color: "rgba(0,240,255,0.85)" }
+                        { val: sysCfg.INDOOR_AIR_TEMP_MAX, label: "OPEN (MAX): " + sysCfg.INDOOR_AIR_TEMP_MAX + "°C", color: "rgba(255,42,95,0.85)" },
+                        { val: sysCfg.INDOOR_AIR_TEMP_MIN, label: "CLOSE (MIN): " + sysCfg.INDOOR_AIR_TEMP_MIN + "°C", color: "rgba(0,240,255,0.85)" }
                     ];
                 }
             },
@@ -2280,12 +2279,10 @@
                 get max() { return (sysCfg.CO2_MAX !== undefined) ? sysCfg.CO2_MAX + 300 : 1500; },
                 get thresholds() {
                     return [
-                        { val: sysCfg.CO2_MAX, label: "MAX: " + sysCfg.CO2_MAX + " ppm", color: "rgba(255,42,95,0.85)" },
-                        { val: sysCfg.CO2_UPPER, label: "UPPER: " + sysCfg.CO2_UPPER + " ppm", color: "rgba(255,140,0,0.85)" },
-                        { val: sysCfg.CO2_CLOSING_MAX, label: "CLOSE MAX: " + sysCfg.CO2_CLOSING_MAX + " ppm", color: "rgba(0,230,118,0.85)" },
-                        { val: sysCfg.CO2_CLOSING_MIN, label: "CLOSE MIN: " + sysCfg.CO2_CLOSING_MIN + " ppm", color: "rgba(0,230,118,0.85)" },
-                        { val: sysCfg.CO2_LOWER, label: "LOWER: " + sysCfg.CO2_LOWER + " ppm", color: "rgba(255,183,3,0.85)" },
-                        { val: sysCfg.CO2_MIN, label: "MIN: " + sysCfg.CO2_MIN + " ppm", color: "rgba(0,240,255,0.85)" }
+                        { val: sysCfg.CO2_MAX, label: "EXCESS OPEN (MAX): " + sysCfg.CO2_MAX + " ppm", color: "rgba(255,42,95,0.85)" },
+                        { val: sysCfg.CO2_CLOSING_MAX, label: "EXCESS CLOSE: " + sysCfg.CO2_CLOSING_MAX + " ppm", color: "rgba(0,230,118,0.85)" },
+                        { val: sysCfg.CO2_CLOSING_MIN, label: "DEFICIT CLOSE: " + sysCfg.CO2_CLOSING_MIN + " ppm", color: "rgba(0,230,118,0.85)" },
+                        { val: sysCfg.CO2_MIN, label: "DEFICIT OPEN (MIN): " + sysCfg.CO2_MIN + " ppm", color: "rgba(0,240,255,0.85)" }
                     ];
                 }
             },

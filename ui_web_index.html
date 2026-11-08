@@ -1845,7 +1845,12 @@
             const rOn = sysCfg.RELAY_STATE_ON !== undefined ? sysCfg.RELAY_STATE_ON : 1;
             const rOff = sysCfg.RELAY_STATE_OFF !== undefined ? sysCfg.RELAY_STATE_OFF : 0;
             const stateVal = isChecked ? rOn : rOff;
-            document.getElementById('vVal').innerText = (stateVal === (sysCfg.RELAY_STATE_ON !== undefined ? sysCfg.RELAY_STATE_ON : 1)) ? 'ON' : 'OFF';
+            const isRelayOn = (stateVal === (sysCfg.RELAY_STATE_ON !== undefined ? sysCfg.RELAY_STATE_ON : 1));
+            const lbl = document.getElementById('vVal');
+            if (lbl) {
+                lbl.innerText = isRelayOn ? 'ON' : 'OFF';
+                lbl.style.color = isRelayOn ? '#00e676' : '#fff';
+            }
         }
 
         // ─── BINARY 2-STATE CONTROL (DAMPERS / AIR GATE) ───

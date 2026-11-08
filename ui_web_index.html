@@ -900,21 +900,19 @@
                     <div style="height:12px;border-bottom:1px solid rgba(255,255,255,0.06);margin:8px 0"></div>
 
                     <!-- AIR (GATE) CONTROL -->
-                    <div>
-                        <div class="label-row"><span>Air (Gate Position)</span></div>
-                        <div class="precision-control">
-                            <button class="step-btn" onclick="stepVal(-1)">−</button>
-                            <input type="number" id="cInput" class="num-input" step="1" oninput="syncFromInput()">
-                            <span class="num-unit">°</span>
-                            <button class="step-btn" onclick="stepVal(1)">+</button>
+                    <label class="toggle-row toggle-damper">
+                        <span
+                            style="font-size:.85rem;font-weight:700;color:var(--primary);text-transform:uppercase">Dampers
+                            (Air Gates)</span>
+                        <div style="display:flex;align-items:center;gap:10px">
+                            <span id="cVal" class="val" style="color:#fff;font-weight:700">CLOSED (90°)</span>
+                            <div class="switch">
+                                <input type="checkbox" id="cToggle" class="primary-toggle"
+                                    onchange="updateDamperLabel()">
+                                <span class="slider round"></span>
+                            </div>
                         </div>
-                        <input type="range" id="cSlider" step="1" oninput="syncFromSlider()">
-                        <div class="presets-row">
-                            <button class="preset-btn" id="pre0">Open</button>
-                            <button class="preset-btn" id="pre45">Half</button>
-                            <button class="preset-btn" id="pre90">Closed</button>
-                        </div>
-                    </div>
+                    </label>
                     <div style="margin-top:8px">
                         <div class="label-row">
                             <span
@@ -1337,31 +1335,7 @@
             if (sysCfg.MOTOR_ANGLE_OPEN !== undefined) MOTOR_ANGLE_OPEN = sysCfg.MOTOR_ANGLE_OPEN;
             if (sysCfg.MOTOR_ANGLE_CLOSED !== undefined) MOTOR_ANGLE_CLOSED = sysCfg.MOTOR_ANGLE_CLOSED;
 
-            if (MOTOR_ANGLE_OPEN !== null && MOTOR_ANGLE_CLOSED !== null) {
-                const minAng = Math.min(MOTOR_ANGLE_OPEN, MOTOR_ANGLE_CLOSED);
-                const maxAng = Math.max(MOTOR_ANGLE_OPEN, MOTOR_ANGLE_CLOSED);
-                const cInput = document.getElementById('cInput');
-                const cSlider = document.getElementById('cSlider');
-                if (cInput && cSlider) {
-                    cInput.min = minAng; cInput.max = maxAng;
-                    cSlider.min = minAng; cSlider.max = maxAng;
-                    cInput.value = minAng; cSlider.value = minAng;
-                }
-                const pre0 = document.getElementById('pre0');
-                const pre45 = document.getElementById('pre45');
-                const pre90 = document.getElementById('pre90');
-                if (pre0 && pre90) {
-                    pre0.textContent = `Open ${MOTOR_ANGLE_OPEN}°`;
-                    pre0.onclick = function () { setAngle(MOTOR_ANGLE_OPEN); };
-                    pre90.textContent = `Closed ${MOTOR_ANGLE_CLOSED}°`;
-                    pre90.onclick = function () { setAngle(MOTOR_ANGLE_CLOSED); };
-                    if (pre45) {
-                        const midAng = Math.round((MOTOR_ANGLE_OPEN + MOTOR_ANGLE_CLOSED) / 2);
-                        pre45.textContent = `Half ${midAng}°`;
-                        pre45.onclick = function () { setAngle(midAng); };
-                    }
-                }
-            }
+            updateDamperLabel();
 
             const sSlider = document.getElementById('sSlider');
             const sInput = document.getElementById('sInput');
@@ -1874,44 +1848,18 @@
             document.getElementById('vVal').innerText = (stateVal === (sysCfg.RELAY_STATE_ON !== undefined ? sysCfg.RELAY_STATE_ON : 1)) ? 'ON' : 'OFF';
         }
 
-        // ─── PRECISION CONTROL (GATE) ───
-        function clampAngle(v) {
-            const minAng = Math.min(MOTOR_ANGLE_OPEN, MOTOR_ANGLE_CLOSED);
-            const maxAng = Math.max(MOTOR_ANGLE_OPEN, MOTOR_ANGLE_CLOSED);
-            return Math.max(minAng, Math.min(maxAng, parseInt(v) || minAng));
-        }
-
-        function setAngle(val) {
-            val = clampAngle(val);
-            document.getElementById('cInput').value = val;
-            document.getElementById('cSlider').value = val;
-            highlightPreset(val);
+        // ─── BINARY 2-STATE CONTROL (DAMPERS / AIR GATE) ───
+        function updateDamperLabel() {
+            const toggle = document.getElementById('cToggle');
+            const isChecked = toggle ? toggle.checked : false;
+            const mOpen = (MOTOR_ANGLE_OPEN !== null && MOTOR_ANGLE_OPEN !== undefined) ? MOTOR_ANGLE_OPEN : 0;
+            const mClosed = (MOTOR_ANGLE_CLOSED !== null && MOTOR_ANGLE_CLOSED !== undefined) ? MOTOR_ANGLE_CLOSED : 90;
+            const lbl = document.getElementById('cVal');
+            if (lbl) {
+                lbl.innerText = isChecked ? `OPEN (${mOpen}°)` : `CLOSED (${mClosed}°)`;
+                lbl.style.color = isChecked ? '#00e676' : '#fff';
+            }
             if (window.navigator.vibrate) window.navigator.vibrate(5);
-        }
-
-        function syncFromInput() {
-            const raw = document.getElementById('cInput').value;
-            const val = clampAngle(raw);
-            document.getElementById('cSlider').value = val;
-            highlightPreset(val);
-        }
-
-        function syncFromSlider() {
-            const val = parseInt(document.getElementById('cSlider').value);
-            document.getElementById('cInput').value = val;
-            highlightPreset(val);
-        }
-
-        function stepVal(amount) {
-            const current = parseInt(document.getElementById('cInput').value) || 0;
-            setAngle(current + amount);
-        }
-
-        function highlightPreset(val) {
-            const midAng = Math.round((MOTOR_ANGLE_OPEN + MOTOR_ANGLE_CLOSED) / 2);
-            document.getElementById('pre0').classList.toggle('active-preset', val === MOTOR_ANGLE_OPEN);
-            document.getElementById('pre45').classList.toggle('active-preset', val === midAng);
-            document.getElementById('pre90').classList.toggle('active-preset', val === MOTOR_ANGLE_CLOSED);
         }
 
         // ─── IRRIGATION DURATION SLIDER & STEPPER (0 - 60 min) ───
@@ -2124,7 +2072,9 @@
             const rOff = sysCfg.RELAY_STATE_OFF !== undefined ? sysCfg.RELAY_STATE_OFF : 0;
 
             const valveVal = document.getElementById('vToggle').checked ? rOn : rOff;
-            const m1Angle = clampAngle(document.getElementById('cInput').value);
+            const mOpen = (MOTOR_ANGLE_OPEN !== null && MOTOR_ANGLE_OPEN !== undefined) ? MOTOR_ANGLE_OPEN : 0;
+            const mClosed = (MOTOR_ANGLE_CLOSED !== null && MOTOR_ANGLE_CLOSED !== undefined) ? MOTOR_ANGLE_CLOSED : 90;
+            const m1Angle = document.getElementById('cToggle').checked ? mOpen : mClosed;
             const m2Angle = m1Angle;
 
             let holdD = Math.min(255, Math.round(s_c / 60));

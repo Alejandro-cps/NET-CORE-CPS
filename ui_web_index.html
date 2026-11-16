@@ -3052,7 +3052,8 @@
         // ─── INITIALIZATION ───
         parseTopology();
         renderNetwork();
-        if (typeof highlightPreset === 'function') highlightPreset(0);
+        highlightValveDurationPreset(0);
+        highlightDamperDurationPreset(0);
         renderTimeNavButtons();
         renderCarousel();
 

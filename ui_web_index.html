@@ -1381,18 +1381,44 @@
 
             // Auto-discover tunnel URL from GitHub repository if no api param passed
             if (!telemetryApiUrl && !telemetryFallbackApiUrl) {
-                fetch("https://raw.githubusercontent.com/Alejandro-cps/NET-CORE-CPS/main/tunnel_url.txt", { cache: "no-store" })
-                    .then(r => r.text())
-                    .then(txt => {
-                        const u = txt.trim();
-                        if (u && u.startsWith("http")) {
-                            telemetryApiUrl = u.replace(/\/+$/, '') + '/telemetry?token=NETCORE-CPS-SECURE-WEB-TOKEN-2026';
-                            activeApiUrl = telemetryApiUrl;
-                            if (typeof updateTunnelDisplay === 'function') {
-                                updateTunnelDisplay(activeApiUrl, "CLOUDFLARE READY", "#00e676");
-                            }
+                const onDiscoveredUrl = (u) => {
+                    if (u && u.startsWith("http")) {
+                        telemetryApiUrl = u.replace(/\/+$/, '') + '/telemetry?token=NETCORE-CPS-SECURE-WEB-TOKEN-2026';
+                        activeApiUrl = telemetryApiUrl;
+                        if (typeof updateTunnelDisplay === 'function') {
+                            updateTunnelDisplay(activeApiUrl, "CLOUDFLARE READY", "#00e676");
                         }
-                    }).catch(() => {});
+                        if (typeof startTelemetryPolling === 'function') {
+                            startTelemetryPolling();
+                        }
+                    }
+                };
+
+                // A. Try GitHub API first (instant, 0s cache)
+                fetch("https://api.github.com/repos/Alejandro-cps/NET-CORE-CPS/contents/tunnel_url.txt", { cache: "no-store" })
+                    .then(r => r.ok ? r.json() : Promise.reject())
+                    .then(data => {
+                        const raw = atob((data.content || '').replace(/\s/g, '')).trim();
+                        if (raw.startsWith("http")) {
+                            onDiscoveredUrl(raw);
+                        } else {
+                            throw new Error("No URL in API content");
+                        }
+                    })
+                    .catch(() => {
+                        // B. Fallback to raw.githubusercontent.com
+                        fetch("https://raw.githubusercontent.com/Alejandro-cps/NET-CORE-CPS/main/tunnel_url.txt", { cache: "no-store" })
+                            .then(r => r.text())
+                            .then(txt => onDiscoveredUrl(txt.trim()))
+                            .catch(err => {
+                                console.warn("[TUNNEL-AUTODISCOVER] All discovery methods failed:", err);
+                                if (!telemetryApiUrl && !telemetryFallbackApiUrl) {
+                                    if (typeof updateLinkStatusBadge === 'function') {
+                                        updateLinkStatusBadge("⚠️ NO TUNNEL CONFIGURED", "#ffb703");
+                                    }
+                                }
+                            });
+                    });
             }
 
             activeApiUrl = telemetryApiUrl || telemetryFallbackApiUrl;
@@ -3388,15 +3414,24 @@
                 }
             }
 
+        let pollingInterval = null;
+        function startTelemetryPolling() {
+            if (pollingInterval) return;
+            runTelemetryPoll();
+            pollingInterval = setInterval(runTelemetryPoll, 2500);
+        }
+
         if (telemetryApiUrl || telemetryFallbackApiUrl) {
-                setTimeout(function() {
-                    runTelemetryPoll();
-                    setInterval(runTelemetryPoll, 2500);
-                }, 800);
-            } else {
-                isLiveConnected = false;
-                renderChart();
-            }
+            setTimeout(startTelemetryPolling, 500);
+        } else {
+            // Started automatically when the GitHub tunnel URL resolves
+            // Safety timeout: if after 3s nothing resolved, start anyway to show diagnostic
+            setTimeout(function() {
+                if (!pollingInterval) {
+                    startTelemetryPolling();
+                }
+            }, 3000);
+        }
     </script>
 </body>
 

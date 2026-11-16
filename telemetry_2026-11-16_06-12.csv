@@ -1,0 +1,2 @@
+timestamp;coordinator_sid;node_sid;node_status;soil_h;soil_t;soil_ec;soil_ph;ds_temp;co2;gas_t;gas_rh;pwr_v;pwr_ma;pwr_mw;pos_gate_motor_1;pos_gate_motor_2;gate_motor_on;valve_relay_on;coord_v;coord_ma;coord_mw
+2026-11-16 11:35:28;1;1;ONLINE;54,3;20,5;235,0;5,4;31,37;469,0;31,5;39,4;4,17;100,0;421,0;1,44;1,23;0;0;4,2;75,3;317,4

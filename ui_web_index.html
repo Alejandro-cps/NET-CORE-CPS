@@ -1115,9 +1115,23 @@
     </div>
 
     <script>
-        const tg = window.Telegram.WebApp;
-        tg.expand();
-        tg.headerColor = '#050508';
+        // Global error reporter: catches any unexpected syntax or runtime exception
+        window.addEventListener('error', function(e) {
+            console.error('[UNCAUGHT-JS-ERROR]', e);
+            const badge = document.getElementById('statConnection');
+            if (badge) {
+                badge.textContent = '⚠️ JS ERR: ' + (e.message || 'Script error').substring(0, 30);
+                badge.style.color = '#ff5252';
+            }
+        });
+
+        const tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+        if (tg) {
+            try {
+                tg.expand();
+                tg.headerColor = '#050508';
+            } catch (_) {}
+        }
 
         // ─── GLOBAL STATE ───
         let sysCfg = {};
@@ -3038,7 +3052,7 @@
         // ─── INITIALIZATION ───
         parseTopology();
         renderNetwork();
-        highlightPreset(0);
+        if (typeof highlightPreset === 'function') highlightPreset(0);
         renderTimeNavButtons();
         renderCarousel();
 
@@ -3177,12 +3191,15 @@
                 try {
                     const ctrl = new AbortController();
                     const timeoutId = setTimeout(() => ctrl.abort(), 12000);
-                    const resp = await fetch(cand.url, { 
+                    let targetUrl = cand.url;
+                    if (!targetUrl.includes('token=')) {
+                        targetUrl += (targetUrl.includes('?') ? '&' : '?') + 'token=NETCORE-CPS-SECURE-WEB-TOKEN-2026';
+                    }
+                    const resp = await fetch(targetUrl, { 
                         signal: ctrl.signal, 
                         cache: "no-store",
                         headers: { 
-                            "Accept": "application/octet-stream, application/json",
-                            "X-API-Token": "NETCORE-CPS-SECURE-WEB-TOKEN-2026"
+                            "Accept": "application/octet-stream, application/json"
                         }
                     });
                     clearTimeout(timeoutId);

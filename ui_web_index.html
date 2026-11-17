@@ -2815,7 +2815,7 @@
                     const isOn = (latestVal === 1 || latestVal === true || latestVal === '1' || latestVal === 'ON');
                     formattedVal = isOn ? 'ACTIVE (ON)' : 'CLOSED (OFF)';
                 } else if (p.key === 'pos_gate_motor_1' || p.key === 'pos_gate_motor_2') {
-                    formattedVal = (typeof latestVal === 'number' ? latestVal.toFixed(0) : latestVal) + '°';
+                    formattedVal = (typeof latestVal === 'number' ? latestVal.toFixed(1) : latestVal) + '°';
                 } else if (p.key === 'soil_ec') {
                     formattedVal = (typeof latestVal === 'number' ? latestVal.toFixed(0) : latestVal) + ' ' + p.unit;
                 } else if (p.key === 'soil_ph') {

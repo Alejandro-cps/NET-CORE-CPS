@@ -1228,7 +1228,7 @@
                 const regCount = view.getUint8(offset + 17);
                 const nodeCount = view.getUint8(offset + 18);
 
-                const maskSize = regCount > 0 ? Math.floor((regCount * 2 + 7) / 8) : 0;
+                const maskSize = regCount > 0 ? Math.floor((regCount + 1) / 2) : 0;
                 const payloadSize = nodeCount * UPLINK_SIZE;
                 const expectedTotal = HEADER_SIZE + maskSize + payloadSize + 2 + 2;
 
@@ -1253,14 +1253,18 @@
                 const maskOffset = offset + HEADER_SIZE;
                 const nodeStatusMap = {};
                 const nodeBusyMap = {};
+                const nodeCycleMap = {};
                 for (let sid = 1; sid <= regCount; sid++) {
-                    const byteIdx = Math.floor((sid - 1) / 4);
-                    const pos = (sid - 1) % 4;
+                    const byteIdx = Math.floor((sid - 1) / 2);
+                    const shift = ((sid - 1) % 2 === 0) ? 0 : 4;
                     const maskByte = bytes[maskOffset + byteIdx] || 0;
-                    const isBusy = !!((maskByte >> (pos * 2)) & 1);
-                    const isAwake = !!((maskByte >> (pos * 2 + 1)) & 1);
+                    const nibble = (maskByte >> shift) & 0x0F;
+                    const isBusy = !!(nibble & 0x01);
+                    const isAwake = !!(nibble & 0x02);
+                    const cycleCode = (nibble >> 2) & 0x03;
                     nodeBusyMap[sid] = isBusy;
                     nodeStatusMap[sid] = isAwake ? "ONLINE" : "SLEEPING";
+                    nodeCycleMap[sid] = cycleCode;
                 }
 
                 const uplinksOffset = maskOffset + maskSize;
@@ -1326,6 +1330,37 @@
                     };
                 }
 
+                for (let sid = 1; sid <= regCount; sid++) {
+                    const cycleC = nodeCycleMap[sid] || 0;
+                    let cName = "AIR_TEMP";
+                    let sExp = (sysCfg && sysCfg.SETPOINT_SLEEP_INDOOR_AIR_TEMP) || 300;
+                    if (cycleC === 1) {
+                        cName = "SOIL_HUM";
+                        sExp = (sysCfg && sysCfg.SETPOINT_SLEEP_SOIL_HUM) || 300;
+                    } else if (cycleC === 2) {
+                        cName = "CO2_EXCESS";
+                        sExp = (sysCfg && sysCfg.SETPOINT_SLEEP_CO2) || 300;
+                    } else if (cycleC === 3) {
+                        cName = "CO2_DEFICIT";
+                        sExp = (sysCfg && sysCfg.SETPOINT_SLEEP_CO2) || 300;
+                    }
+
+                    if (!nodes[sid]) {
+                        nodes[sid] = {
+                            status: nodeStatusMap[sid] || "SLEEPING",
+                            is_busy: !!nodeBusyMap[sid],
+                            has_uplink: false,
+                            cycle_code: cycleC,
+                            cycle_name: cName,
+                            sleep_s_expected: sExp
+                        };
+                    } else {
+                        nodes[sid].cycle_code = cycleC;
+                        nodes[sid].cycle_name = cName;
+                        nodes[sid].sleep_s_expected = sExp;
+                    }
+                }
+
                 result[coordSid] = {
                     coord_ina: {
                         coord_v: coordV,
@@ -1334,6 +1369,7 @@
                     },
                     node_status_map: nodeStatusMap,
                     node_busy_map: nodeBusyMap,
+                    node_cycle_map: nodeCycleMap,
                     nodes: nodes
                 };
 
@@ -1483,7 +1519,11 @@
                                 window.nodeStateMap = window.nodeStateMap || {};
                                 window.nodeStateMap[key] = {
                                     status: nodeData.status || "ONLINE",
-                                    is_busy: !!nodeData.is_busy
+                                    is_busy: !!nodeData.is_busy,
+                                    cycle_code: nodeData.cycle_code,
+                                    cycle_name: nodeData.cycle_name,
+                                    sleep_s_expected: nodeData.sleep_s_expected,
+                                    sleep_s_remaining: nodeData.sleep_s_remaining
                                 };
                                 if (nodeData.has_uplink) {
                                     if (!telemetryHistory[key]) telemetryHistory[key] = [];
@@ -2637,9 +2677,29 @@
             const st = stInfo ? stInfo.status : null;
             const isBusy = stInfo ? stInfo.is_busy : false;
             let statusSuffix = '';
-            if (st === 'SLEEPING') statusSuffix = ' [💤 SLEEPING]';
-            else if (st === 'LOST') statusSuffix = ' [🔴 LOST]';
-            else if (st === 'TRANSITION') statusSuffix = ' [🟡 TRANSITION]';
+            if (st === 'SLEEPING') {
+                const sExp = (stInfo && stInfo.sleep_s_expected) || 300;
+                window.nodeSleepStart = window.nodeSleepStart || {};
+                const gwKey1 = `${activeCoordinatorSid}:${activeNodeSid}`;
+                const gwKey2 = `${activeCoordinatorSid}_${activeNodeSid}`;
+                const gwStart = (window.gatewayNodeSleepStart && (window.gatewayNodeSleepStart[gwKey1] || window.gatewayNodeSleepStart[gwKey2]));
+                if (gwStart) {
+                    window.nodeSleepStart[key] = gwStart * 1000;
+                } else if (!window.nodeSleepStart[key]) {
+                    window.nodeSleepStart[key] = Date.now();
+                }
+                const elapsedSec = Math.max(0, (Date.now() - window.nodeSleepStart[key]) / 1000);
+                const remSec = Math.max(0, Math.floor(sExp - elapsedSec));
+                const remM = Math.floor(remSec / 60);
+                const remS = remSec % 60;
+                const remStr = `${remM}m ${remS < 10 ? '0' : ''}${remS}s`;
+                const cNm = (stInfo && stInfo.cycle_name) || 'AIR_TEMP';
+                statusSuffix = ` [💤 SLEEPING: ${cNm} (${remStr})]`;
+            } else {
+                if (window.nodeSleepStart) delete window.nodeSleepStart[key];
+                if (st === 'LOST') statusSuffix = ' [🔴 LOST]';
+                else if (st === 'TRANSITION') statusSuffix = ' [🟡 TRANSITION]';
+            }
             if (isBusy) statusSuffix += ' [⚙️ BUSY]';
 
             const now = Date.now();
@@ -2727,6 +2787,15 @@
                             let textColor = '#818cf8';
                             let fullLabel = '💤 SLEEPING (DEEPSLEEP)';
                             let shortLabel = '💤';
+                            if (inv.state === 'SLEEPING') {
+                                const sExp = (stInfo && stInfo.sleep_s_expected) || 300;
+                                const startT = (window.nodeSleepStart && window.nodeSleepStart[key]) || inv.start;
+                                const elapsedSec = Math.max(0, (now - startT) / 1000);
+                                const remSec = Math.max(0, Math.floor(sExp - elapsedSec));
+                                const remM = Math.floor(remSec / 60);
+                                const remS = remSec % 60;
+                                fullLabel = `💤 SLEEPING (${remM}m ${remS < 10 ? '0' : ''}${remS}s)`;
+                            }
 
                             if (inv.state === 'TRANSITION') {
                                 hatchUrl = 'url(#transitionHatch)';
@@ -3215,6 +3284,10 @@
                         if (xAlertsHeader) {
                             try { activeAlerts = JSON.parse(xAlertsHeader); } catch (e) { }
                         }
+                        const xSleepHeader = resp.headers.get("X-Node-Sleep-Start");
+                        if (xSleepHeader) {
+                            try { window.gatewayNodeSleepStart = JSON.parse(xSleepHeader); } catch (e) { }
+                        }
                         let data = null;
                         let isEmpty = false;
                         const contentType = resp.headers.get("Content-Type") || "";
@@ -3237,6 +3310,7 @@
                                     data = parsed.telemetry || parsed;
                                     if (parsed.command_history && (!cmdHist || cmdHist.length === 0)) cmdHist = parsed.command_history;
                                     if (parsed.active_alerts && (!activeAlerts || activeAlerts.length === 0)) activeAlerts = parsed.active_alerts;
+                                    if (parsed.node_sleep_start) window.gatewayNodeSleepStart = Object.assign(window.gatewayNodeSleepStart || {}, parsed.node_sleep_start);
                                 } catch (e) {
                                     const enc = new TextEncoder();
                                     data = decodeSuperPackets(enc.encode(text).buffer);
@@ -3374,7 +3448,11 @@
                                 }
                                 window.nodeStateMap[key] = {
                                     status: currentStatus,
-                                    is_busy: currentBusy
+                                    is_busy: currentBusy,
+                                    cycle_code: nodeData.cycle_code,
+                                    cycle_name: nodeData.cycle_name,
+                                    sleep_s_expected: nodeData.sleep_s_expected,
+                                    sleep_s_remaining: nodeData.sleep_s_remaining
                                 };
 
                                 if (!topology[coordinator_sid].includes(node_sid)) {

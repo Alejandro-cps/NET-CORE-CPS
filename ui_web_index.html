@@ -1017,7 +1017,13 @@
                                 <line x1="0" y1="0" x2="0" y2="16" stroke="rgba(250, 204, 21, 0.40)"
                                     stroke-width="2.5" />
                             </pattern>
-                            <!-- 3. LOST / OFFLINE HATCH (Crimson Red #ef4444) -->
+                            <!-- 3. RECOVERING HATCH (Orange #f97316) -->
+                            <pattern id="recoveringHatch" width="16" height="16" patternTransform="rotate(45 0 0)"
+                                patternUnits="userSpaceOnUse">
+                                <line x1="0" y1="0" x2="0" y2="16" stroke="rgba(249, 115, 22, 0.40)"
+                                    stroke-width="2.5" />
+                            </pattern>
+                            <!-- 4. LOST / OFFLINE HATCH (Crimson Red #ef4444) -->
                             <pattern id="lostHatch" width="16" height="16" patternTransform="rotate(45 0 0)"
                                 patternUnits="userSpaceOnUse">
                                 <line x1="0" y1="0" x2="0" y2="16" stroke="rgba(239, 68, 68, 0.40)"
@@ -1606,7 +1612,8 @@
                                 if (stInfo.status === 'ONLINE') stIcon = '<span title="Online (Awake 1 + 32B)" style="color:#00e676;font-size:0.65rem;margin-left:4px">●</span>';
                                 else if (stInfo.status === 'SLEEPING') stIcon = '<span title="Sleeping (Standby 0 + 0B)" style="color:#818cf8;font-size:0.65rem;margin-left:4px">💤</span>';
                                 else if (stInfo.status === 'TRANSITION') stIcon = '<span title="Transition (Handshake 0 + 32B)" style="color:#ffb703;font-size:0.65rem;margin-left:4px">⏳</span>';
-                                else if (stInfo.status === 'LOST') stIcon = '<span title="Lost Signal (Awake 1 + 0B)" style="color:#ff2a5f;font-size:0.65rem;margin-left:4px">⚠️</span>';
+                                else if (stInfo.status === 'RECOVERING') stIcon = '<span title="Recovering (Route D in progress)" style="color:#f97316;font-size:0.65rem;margin-left:4px">🔄</span>';
+                                else if (stInfo.status === 'LOST') stIcon = '<span title="Lost Signal (Unreachable)" style="color:#ff2a5f;font-size:0.65rem;margin-left:4px">⚠️</span>';
                                 if (stInfo.is_busy) stIcon += '<span title="Busy (Manual order active)" style="color:#ff9100;font-size:0.65rem;margin-left:2px">⚙️</span>';
                             }
                             html += `<div class="node-chip ${isSel ? 'selected' : ''}" onclick="selectIndividualNode(${selectedCoordinatorSid},${node_sid})">N${node_sid}${stIcon}</div>`;
@@ -1649,7 +1656,8 @@
                                 if (stInfo.status === 'ONLINE') stIcon = '<span title="Online (Awake 1 + 32B)" style="color:#00e676;font-size:0.65rem;margin-left:4px">●</span>';
                                 else if (stInfo.status === 'SLEEPING') stIcon = '<span title="Sleeping (Standby 0 + 0B)" style="color:#818cf8;font-size:0.65rem;margin-left:4px">💤</span>';
                                 else if (stInfo.status === 'TRANSITION') stIcon = '<span title="Transition (Handshake 0 + 32B)" style="color:#ffb703;font-size:0.65rem;margin-left:4px">⏳</span>';
-                                else if (stInfo.status === 'LOST') stIcon = '<span title="Lost Signal (Awake 1 + 0B)" style="color:#ff2a5f;font-size:0.65rem;margin-left:4px">⚠️</span>';
+                                else if (stInfo.status === 'RECOVERING') stIcon = '<span title="Recovering (Route D in progress)" style="color:#f97316;font-size:0.65rem;margin-left:4px">🔄</span>';
+                                else if (stInfo.status === 'LOST') stIcon = '<span title="Lost Signal (Unreachable)" style="color:#ff2a5f;font-size:0.65rem;margin-left:4px">⚠️</span>';
                                 if (stInfo.is_busy) stIcon += '<span title="Busy (Manual order active)" style="color:#ff9100;font-size:0.65rem;margin-left:2px">⚙️</span>';
                             }
                             html += `<div class="node-chip ${isSel ? 'selected' : ''}" onclick="toggleNodeCustom(${coordinator_sid},${node_sid})">N${node_sid}${stIcon}</div>`;
@@ -2775,21 +2783,22 @@
             } else {
                 if (window.nodeSleepStart) delete window.nodeSleepStart[key];
                 if (st === 'LOST') statusSuffix = ' [🔴 LOST]';
+                else if (st === 'RECOVERING') statusSuffix = ' [🟠 RECOVERING]';
                 else if (st === 'TRANSITION') statusSuffix = ' [🟡 TRANSITION]';
             }
             if (isBusy) statusSuffix += ' [⚙️ BUSY]';
 
             const now = Date.now();
 
-            // ─── PERSISTENT HISTORICAL 4-STATE TIMELINE TRACKING ───
-            // Remembers exact start/end timestamps and states (SLEEPING, TRANSITION, LOST)
+            // ─── PERSISTENT HISTORICAL 5-STATE TIMELINE TRACKING ───
+            // Remembers exact start/end timestamps and states (SLEEPING, TRANSITION, RECOVERING, LOST)
             // so historical state shadings are NEVER wiped and no unexplained empty gaps exist.
             window.nodeStateIntervals = window.nodeStateIntervals || {};
             if (!window.nodeStateIntervals[key]) window.nodeStateIntervals[key] = [];
             let intervals = sanitizeIntervals(window.nodeStateIntervals[key]);
             window.nodeSleepIntervals = window.nodeStateIntervals; // backward-compatibility alias
 
-            const isNonOnline = (st === 'SLEEPING' || st === 'TRANSITION' || st === 'LOST');
+            const isNonOnline = (st === 'SLEEPING' || st === 'TRANSITION' || st === 'RECOVERING' || st === 'LOST');
             const lastInterval = intervals.length > 0 ? intervals[intervals.length - 1] : null;
 
             if (isNonOnline) {
@@ -2913,6 +2922,11 @@
                                 textColor = '#facc15';
                                 fullLabel = '🟡 SYNC / TRANSITION';
                                 shortLabel = '⏳';
+                            } else if (inv.state === 'RECOVERING') {
+                                hatchUrl = 'url(#recoveringHatch)';
+                                textColor = '#f97316';
+                                fullLabel = '🟠 RECOVERING (ROUTE D)';
+                                shortLabel = '🔄';
                             } else if (inv.state === 'LOST') {
                                 hatchUrl = 'url(#lostHatch)';
                                 textColor = '#ef4444';

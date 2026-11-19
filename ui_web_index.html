@@ -1332,17 +1332,23 @@
 
                 for (let sid = 1; sid <= regCount; sid++) {
                     const cycleC = nodeCycleMap[sid] || 0;
+                    const nStatus = nodeStatusMap[sid] || (nodes[sid] ? nodes[sid].status : "ONLINE");
                     let cName = "AIR_TEMP";
                     let sExp = (sysCfg && sysCfg.SETPOINT_SLEEP_INDOOR_AIR_TEMP) || 300;
-                    if (cycleC === 1) {
-                        cName = "SOIL_HUM";
-                        sExp = (sysCfg && sysCfg.SETPOINT_SLEEP_SOIL_HUM) || 300;
-                    } else if (cycleC === 2) {
-                        cName = "CO2_EXCESS";
-                        sExp = (sysCfg && sysCfg.SETPOINT_SLEEP_CO2) || 300;
-                    } else if (cycleC === 3) {
-                        cName = "CO2_DEFICIT";
-                        sExp = (sysCfg && sysCfg.SETPOINT_SLEEP_CO2) || 300;
+                    if (nStatus === "ONLINE") {
+                        cName = "IDLE";
+                        sExp = 0;
+                    } else {
+                        if (cycleC === 1) {
+                            cName = "SOIL_HUM";
+                            sExp = (sysCfg && sysCfg.SETPOINT_SLEEP_SOIL_HUM) || 300;
+                        } else if (cycleC === 2) {
+                            cName = "CO2_EXCESS";
+                            sExp = (sysCfg && sysCfg.SETPOINT_SLEEP_CO2) || 300;
+                        } else if (cycleC === 3) {
+                            cName = "CO2_DEFICIT";
+                            sExp = (sysCfg && sysCfg.SETPOINT_SLEEP_CO2) || 300;
+                        }
                     }
 
                     if (!nodes[sid]) {
@@ -1520,12 +1526,13 @@
                                 }
                                 const key = coordSidNum + '_' + nodeSidNum;
                                 window.nodeStateMap = window.nodeStateMap || {};
+                                const nSt = nodeData.status || "ONLINE";
                                 window.nodeStateMap[key] = {
-                                    status: nodeData.status || "ONLINE",
+                                    status: nSt,
                                     is_busy: !!nodeData.is_busy,
                                     cycle_code: nodeData.cycle_code,
-                                    cycle_name: nodeData.cycle_name,
-                                    sleep_s_expected: nodeData.sleep_s_expected,
+                                    cycle_name: (nSt === "ONLINE") ? "IDLE" : nodeData.cycle_name,
+                                    sleep_s_expected: (nSt === "ONLINE") ? 0 : nodeData.sleep_s_expected,
                                     sleep_s_remaining: nodeData.sleep_s_remaining
                                 };
                                 if (nodeData.has_uplink) {
@@ -3556,8 +3563,8 @@
                                     status: currentStatus,
                                     is_busy: currentBusy,
                                     cycle_code: nodeData.cycle_code,
-                                    cycle_name: nodeData.cycle_name,
-                                    sleep_s_expected: nodeData.sleep_s_expected,
+                                    cycle_name: (currentStatus === "ONLINE") ? "IDLE" : nodeData.cycle_name,
+                                    sleep_s_expected: (currentStatus === "ONLINE") ? 0 : nodeData.sleep_s_expected,
                                     sleep_s_remaining: nodeData.sleep_s_remaining
                                 };
 

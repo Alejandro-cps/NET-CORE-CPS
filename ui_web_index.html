@@ -1352,7 +1352,10 @@
                             has_uplink: false,
                             cycle_code: cycleC,
                             cycle_name: cName,
-                            sleep_s_expected: sExp
+                            sleep_s_expected: sExp,
+                            valve_relay_on: (cycleC === 1),
+                            pos_gate_motor_1: (cycleC === 0 ? 0.0 : 90.0),
+                            pos_gate_motor_2: (cycleC === 0 ? 0.0 : 90.0)
                         };
                     } else {
                         nodes[sid].cycle_code = cycleC;

@@ -2447,6 +2447,7 @@
         // ─── TIME WINDOW SELECTOR WITH ‹ › ARROW PAGINATION ───
         const TIME_WINDOWS = [
             { label: "5m", mins: 5 },
+            { label: "10m", mins: 10 },
             { label: "15m", mins: 15 },
             { label: "30m", mins: 30 },
             { label: "1h", mins: 60 },
@@ -2598,6 +2599,72 @@
             });
         }
 
+        // ─── STRICT CHRONOLOGICAL INTERVAL SANITIZER (ZERO OVERLAP GUARANTEE) ───
+        // Ensures state intervals are disjoint, non-overlapping, and continuous where adjacent.
+        function sanitizeIntervals(rawList) {
+            if (!rawList || rawList.length === 0) return [];
+            const list = rawList
+                .filter(inv => inv && typeof inv.start === 'number' && !isNaN(inv.start))
+                .sort((a, b) => a.start - b.start);
+
+            const result = [];
+            for (let i = 0; i < list.length; i++) {
+                const cur = list[i];
+                const curEnd = (typeof cur.end === 'number' && !isNaN(cur.end)) ? cur.end : null;
+
+                // Skip zero or inverted duration intervals
+                if (curEnd !== null && curEnd <= cur.start) continue;
+
+                if (result.length === 0) {
+                    result.push({ start: cur.start, end: curEnd, state: cur.state });
+                    continue;
+                }
+
+                const prev = result[result.length - 1];
+                const prevEnd = prev.end;
+
+                if (prevEnd === null) {
+                    // Previous interval was open:
+                    if (prev.state === cur.state) {
+                        continue;
+                    } else {
+                        // Truncate previous interval at the exact start of the new state
+                        prev.end = cur.start;
+                        if (prev.end <= prev.start) {
+                            result[result.length - 1] = { start: cur.start, end: curEnd, state: cur.state };
+                        } else {
+                            result.push({ start: cur.start, end: curEnd, state: cur.state });
+                        }
+                    }
+                } else if (cur.start < prevEnd) {
+                    // Overlap detected:
+                    if (prev.state === cur.state) {
+                        // Merge identical states
+                        if (curEnd === null) {
+                            prev.end = null;
+                        } else {
+                            prev.end = Math.max(prevEnd, curEnd);
+                        }
+                    } else {
+                        // Different state: clamp previous end to current start so they strictly abut
+                        prev.end = cur.start;
+                        if (prev.end <= prev.start) {
+                            result[result.length - 1] = { start: cur.start, end: curEnd, state: cur.state };
+                        } else {
+                            result.push({ start: cur.start, end: curEnd, state: cur.state });
+                        }
+                    }
+                } else if (cur.start === prevEnd && prev.state === cur.state) {
+                    // Directly contiguous identical states: merge into one
+                    prev.end = curEnd;
+                } else {
+                    // Clean disjoint interval
+                    result.push({ start: cur.start, end: curEnd, state: cur.state });
+                }
+            }
+            return result;
+        }
+
         function renderChart() {
             const p = PARAMS[currentSlide];
             const chartPolyline = document.getElementById('chartPolyline');
@@ -2712,28 +2779,47 @@
             // so historical state shadings are NEVER wiped and no unexplained empty gaps exist.
             window.nodeStateIntervals = window.nodeStateIntervals || {};
             if (!window.nodeStateIntervals[key]) window.nodeStateIntervals[key] = [];
-            const intervals = window.nodeStateIntervals[key];
+            let intervals = sanitizeIntervals(window.nodeStateIntervals[key]);
             window.nodeSleepIntervals = window.nodeStateIntervals; // backward-compatibility alias
 
             const isNonOnline = (st === 'SLEEPING' || st === 'TRANSITION' || st === 'LOST');
             const lastInterval = intervals.length > 0 ? intervals[intervals.length - 1] : null;
 
             if (isNonOnline) {
+                let startT = now;
+                if (st === 'SLEEPING') {
+                    const gwKey1 = `${activeCoordinatorSid}:${activeNodeSid}`;
+                    const gwKey2 = `${activeCoordinatorSid}_${activeNodeSid}`;
+                    const gwStart = (window.gatewayNodeSleepStart && (window.gatewayNodeSleepStart[gwKey1] || window.gatewayNodeSleepStart[gwKey2]));
+                    if (gwStart) {
+                        startT = gwStart * 1000;
+                    } else if (window.nodeSleepStart && window.nodeSleepStart[key]) {
+                        startT = window.nodeSleepStart[key];
+                    }
+                }
+                const lastAwake = (allHistory.length > 0) ? allHistory[allHistory.length - 1] : null;
+                if (lastAwake && lastAwake._t) {
+                    startT = Math.max(lastAwake._t + 1, startT);
+                }
+
                 if (!lastInterval || lastInterval.end !== null) {
-                    // New non-online period starts: anchor to last known uplink timestamp or now
-                    const lastAwake = (allHistory.length > 0) ? allHistory[allHistory.length - 1] : null;
-                    const startT = (lastAwake && lastAwake._t && (now - lastAwake._t) < 3600000) ? lastAwake._t : now;
+                    // New non-online period starts
+                    if (lastInterval && lastInterval.end !== null) {
+                        startT = Math.max(lastInterval.end, startT);
+                    }
                     intervals.push({ start: startT, end: null, state: st });
                 } else if (lastInterval.state !== st) {
-                    // State changed while non-online (e.g., from SLEEPING to TRANSITION, or TRANSITION to LOST)
-                    lastInterval.end = now;
-                    intervals.push({ start: now, end: null, state: st });
+                    // State changed while non-online (e.g., TRANSITION -> SLEEPING, or TRANSITION -> LOST)
+                    const switchT = Math.max(lastInterval.start + 1, now);
+                    lastInterval.end = switchT;
+                    intervals.push({ start: switchT, end: null, state: st });
                 }
             } else {
                 if (lastInterval && lastInterval.end === null) {
                     // Node just transitioned back to ONLINE: close active interval with first awake timestamp
                     const firstAwake = (allHistory.length > 0) ? allHistory[allHistory.length - 1] : null;
-                    lastInterval.end = (firstAwake && firstAwake._t && firstAwake._t > lastInterval.start) ? firstAwake._t : now;
+                    const wakeT = (firstAwake && firstAwake._t && firstAwake._t > lastInterval.start) ? firstAwake._t : now;
+                    lastInterval.end = Math.max(lastInterval.start + 1000, wakeT);
                 }
             }
 
@@ -2743,28 +2829,38 @@
                     const t0 = allHistory[i - 1]._t;
                     const t1 = allHistory[i]._t;
                     if (t0 && t1 && (t1 - t0 > 45000)) {
-                        const covered = intervals.some(inv => {
+                        const hasCoverage = intervals.some(inv => {
                             const e = inv.end || now;
-                            return (t0 >= inv.start && t0 < e) || (t1 > inv.start && t1 <= e) || (inv.start >= t0 && e <= t1);
+                            return (inv.start < t1 && e > t0);
                         });
-                        if (!covered) {
-                            intervals.push({ start: t0, end: t1, state: 'LOST' });
+                        if (!hasCoverage) {
+                            intervals.push({ start: t0 + 1, end: t1 - 1, state: 'LOST' });
                         }
                     }
                 }
             }
+
+            // Clean, merge and sort to guarantee zero overlaps
+            intervals = sanitizeIntervals(intervals);
 
             // Prune intervals older than 24h & sort chronologically
             const cutoff24h = now - 24 * 3600 * 1000;
             while (intervals.length > 0 && (intervals[0].end || intervals[0].start) < cutoff24h) {
                 intervals.shift();
             }
-            intervals.sort((a, b) => a.start - b.start);
+            window.nodeStateIntervals[key] = intervals;
+            window.nodeSleepIntervals = window.nodeStateIntervals;
 
-            // Real data renderer: filter history within active time window (5m, 15m, 1h, ALL)
+            // Real data renderer: filter history within active time window (5m, 10m, 15m, 1h, ALL)
             let windowMs, windowStart;
             if (timeWindowMinutes === 'all') {
-                const earliestT = (allHistory.length > 0 && allHistory[0]._t) ? allHistory[0]._t : (now - 60000);
+                let earliestT = now - 60000;
+                if (allHistory.length > 0 && allHistory[0]._t) {
+                    earliestT = Math.min(earliestT, allHistory[0]._t);
+                }
+                if (intervals.length > 0 && intervals[0].start) {
+                    earliestT = Math.min(earliestT, intervals[0].start);
+                }
                 windowStart = earliestT;
                 windowMs = Math.max(60000, now - windowStart);
             } else {
@@ -2791,13 +2887,18 @@
                             let fullLabel = '💤 SLEEPING (DEEPSLEEP)';
                             let shortLabel = '💤';
                             if (inv.state === 'SLEEPING') {
-                                const sExp = (stInfo && stInfo.sleep_s_expected) || 300;
-                                const startT = (window.nodeSleepStart && window.nodeSleepStart[key]) || inv.start;
-                                const elapsedSec = Math.max(0, (now - startT) / 1000);
-                                const remSec = Math.max(0, Math.floor(sExp - elapsedSec));
-                                const remM = Math.floor(remSec / 60);
-                                const remS = remSec % 60;
-                                fullLabel = `💤 SLEEPING (${remM}m ${remS < 10 ? '0' : ''}${remS}s)`;
+                                if (inv.end === null) {
+                                    const sExp = (stInfo && stInfo.sleep_s_expected) || 300;
+                                    const startT = (window.nodeSleepStart && window.nodeSleepStart[key]) || inv.start;
+                                    const elapsedSec = Math.max(0, (now - startT) / 1000);
+                                    const remSec = Math.max(0, Math.floor(sExp - elapsedSec));
+                                    const remM = Math.floor(remSec / 60);
+                                    const remS = remSec % 60;
+                                    fullLabel = `💤 SLEEPING (${remM}m ${remS < 10 ? '0' : ''}${remS}s)`;
+                                } else {
+                                    const durM = Math.round((inv.end - inv.start) / 60000);
+                                    fullLabel = durM > 0 ? `💤 SLEEPING (${durM}m)` : '💤 SLEEPING';
+                                }
                             }
 
                             if (inv.state === 'TRANSITION') {
@@ -2840,6 +2941,8 @@
             if (lblStart && lblMid) {
                 if (timeWindowMinutes === 5) {
                     lblStart.textContent = "-5m"; lblMid.textContent = "-2.5m";
+                } else if (timeWindowMinutes === 10) {
+                    lblStart.textContent = "-10m"; lblMid.textContent = "-5m";
                 } else if (timeWindowMinutes === 15) {
                     lblStart.textContent = "-15m"; lblMid.textContent = "-7.5m";
                 } else if (timeWindowMinutes === 30) {
@@ -2912,7 +3015,7 @@
                 if (tNext - tPrev > 45000) return true;
                 return intervals.some(inv => {
                     const end = inv.end || now;
-                    return (tPrev <= inv.start && tNext >= inv.start) || (tPrev < end && tNext >= end);
+                    return (inv.start < tNext && end > tPrev);
                 });
             };
 
@@ -2939,7 +3042,7 @@
                     const itemTime = item._t || (windowStart + (i / Math.max(1, windowHistory.length - 1)) * windowMs);
                     
                     // Skip if reading falls inside any non-online interval
-                    const inNonOnline = intervals.some(inv => itemTime >= inv.start && itemTime < (inv.end || now));
+                    const inNonOnline = intervals.some(inv => itemTime > inv.start && itemTime < (inv.end || now));
                     if (inNonOnline) continue;
 
                     if (currentSeg.length > 0) {

@@ -1029,6 +1029,12 @@
                                 <line x1="0" y1="0" x2="0" y2="16" stroke="rgba(239, 68, 68, 0.40)"
                                     stroke-width="2.5" />
                             </pattern>
+                            <!-- 5. PREVENTIVE DEEPSLEEP HATCH (Cyan/Turquoise #06b6d4) -->
+                            <pattern id="preventiveHatch" width="16" height="16" patternTransform="rotate(-45 0 0)"
+                                patternUnits="userSpaceOnUse">
+                                <line x1="0" y1="0" x2="0" y2="16" stroke="rgba(6, 182, 212, 0.40)"
+                                    stroke-width="2.5" />
+                            </pattern>
                         </defs>
                         <g id="thresholdsGroup"></g>
                         <g id="sleepShadingGroup"></g>
@@ -1611,6 +1617,7 @@
                             if (stInfo) {
                                 if (stInfo.status === 'ONLINE') stIcon = '<span title="Online (Awake 1 + 32B)" style="color:#00e676;font-size:0.65rem;margin-left:4px">●</span>';
                                 else if (stInfo.status === 'SLEEPING') stIcon = '<span title="Sleeping (Standby 0 + 0B)" style="color:#818cf8;font-size:0.65rem;margin-left:4px">💤</span>';
+                                else if (stInfo.status === 'PREVENTIVE_DEEPSLEEP') stIcon = '<span title="Preventive DeepSleep (RAM Refresh)" style="color:#06b6d4;font-size:0.65rem;margin-left:4px">🛡️</span>';
                                 else if (stInfo.status === 'TRANSITION') stIcon = '<span title="Transition (Handshake 0 + 32B)" style="color:#ffb703;font-size:0.65rem;margin-left:4px">⏳</span>';
                                 else if (stInfo.status === 'RECOVERING') stIcon = '<span title="Recovering (Route D in progress)" style="color:#f97316;font-size:0.65rem;margin-left:4px">🔄</span>';
                                 else if (stInfo.status === 'LOST') stIcon = '<span title="Lost Signal (Unreachable)" style="color:#ff2a5f;font-size:0.65rem;margin-left:4px">⚠️</span>';
@@ -1655,6 +1662,7 @@
                             if (stInfo) {
                                 if (stInfo.status === 'ONLINE') stIcon = '<span title="Online (Awake 1 + 32B)" style="color:#00e676;font-size:0.65rem;margin-left:4px">●</span>';
                                 else if (stInfo.status === 'SLEEPING') stIcon = '<span title="Sleeping (Standby 0 + 0B)" style="color:#818cf8;font-size:0.65rem;margin-left:4px">💤</span>';
+                                else if (stInfo.status === 'PREVENTIVE_DEEPSLEEP') stIcon = '<span title="Preventive DeepSleep (RAM Refresh)" style="color:#06b6d4;font-size:0.65rem;margin-left:4px">🛡️</span>';
                                 else if (stInfo.status === 'TRANSITION') stIcon = '<span title="Transition (Handshake 0 + 32B)" style="color:#ffb703;font-size:0.65rem;margin-left:4px">⏳</span>';
                                 else if (stInfo.status === 'RECOVERING') stIcon = '<span title="Recovering (Route D in progress)" style="color:#f97316;font-size:0.65rem;margin-left:4px">🔄</span>';
                                 else if (stInfo.status === 'LOST') stIcon = '<span title="Lost Signal (Unreachable)" style="color:#ff2a5f;font-size:0.65rem;margin-left:4px">⚠️</span>';
@@ -2762,7 +2770,7 @@
             const st = stInfo ? stInfo.status : null;
             const isBusy = stInfo ? stInfo.is_busy : false;
             let statusSuffix = '';
-            if (st === 'SLEEPING') {
+            if (st === 'SLEEPING' || st === 'PREVENTIVE_DEEPSLEEP') {
                 const sExp = (stInfo && stInfo.sleep_s_expected) || 300;
                 window.nodeSleepStart = window.nodeSleepStart || {};
                 const gwKey1 = `${activeCoordinatorSid}:${activeNodeSid}`;
@@ -2778,8 +2786,12 @@
                 const remM = Math.floor(remSec / 60);
                 const remS = remSec % 60;
                 const remStr = `${remM}m ${remS < 10 ? '0' : ''}${remS}s`;
-                const cNm = (stInfo && stInfo.cycle_name) || 'AIR_TEMP';
-                statusSuffix = ` [💤 SLEEPING: ${cNm} (${remStr})]`;
+                if (st === 'PREVENTIVE_DEEPSLEEP') {
+                    statusSuffix = ` [🛡️ PREVENTIVE DEEPSLEEP (${remStr})]`;
+                } else {
+                    const cNm = (stInfo && stInfo.cycle_name) || 'AIR_TEMP';
+                    statusSuffix = ` [💤 SLEEPING: ${cNm} (${remStr})]`;
+                }
             } else {
                 if (window.nodeSleepStart) delete window.nodeSleepStart[key];
                 if (st === 'LOST') statusSuffix = ' [🔴 LOST]';
@@ -2798,12 +2810,12 @@
             let intervals = sanitizeIntervals(window.nodeStateIntervals[key]);
             window.nodeSleepIntervals = window.nodeStateIntervals; // backward-compatibility alias
 
-            const isNonOnline = (st === 'SLEEPING' || st === 'TRANSITION' || st === 'RECOVERING' || st === 'LOST');
+            const isNonOnline = (st === 'SLEEPING' || st === 'PREVENTIVE_DEEPSLEEP' || st === 'TRANSITION' || st === 'RECOVERING' || st === 'LOST');
             const lastInterval = intervals.length > 0 ? intervals[intervals.length - 1] : null;
 
             if (isNonOnline) {
                 let startT = now;
-                if (st === 'SLEEPING') {
+                if (st === 'SLEEPING' || st === 'PREVENTIVE_DEEPSLEEP') {
                     const gwKey1 = `${activeCoordinatorSid}:${activeNodeSid}`;
                     const gwKey2 = `${activeCoordinatorSid}_${activeNodeSid}`;
                     const gwStart = (window.gatewayNodeSleepStart && (window.gatewayNodeSleepStart[gwKey1] || window.gatewayNodeSleepStart[gwKey2]));
@@ -2917,7 +2929,23 @@
                                 }
                             }
 
-                            if (inv.state === 'TRANSITION') {
+                            if (inv.state === 'PREVENTIVE_DEEPSLEEP') {
+                                hatchUrl = 'url(#preventiveHatch)';
+                                textColor = '#06b6d4';
+                                shortLabel = '🛡️';
+                                if (inv.end === null) {
+                                    const sExp = (stInfo && stInfo.sleep_s_expected) || 300;
+                                    const startT = (window.nodeSleepStart && window.nodeSleepStart[key]) || inv.start;
+                                    const elapsedSec = Math.max(0, (now - startT) / 1000);
+                                    const remSec = Math.max(0, Math.floor(sExp - elapsedSec));
+                                    const remM = Math.floor(remSec / 60);
+                                    const remS = remSec % 60;
+                                    fullLabel = `🛡️ PREVENTIVE DEEPSLEEP (${remM}m ${remS < 10 ? '0' : ''}${remS}s)`;
+                                } else {
+                                    const durM = Math.round((inv.end - inv.start) / 60000);
+                                    fullLabel = durM > 0 ? `🛡️ PREVENTIVE DEEPSLEEP (${durM}m)` : '🛡️ PREVENTIVE DEEPSLEEP';
+                                }
+                            } else if (inv.state === 'TRANSITION') {
                                 hatchUrl = 'url(#transitionHatch)';
                                 textColor = '#facc15';
                                 fullLabel = '🟡 SYNC / TRANSITION';
